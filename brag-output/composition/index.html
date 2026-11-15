@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Adversarial Robustness of CNNs — long cut</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="assets/audio-rms.js"></script>
+    <style>
+      @font-face { font-family: "Liberation Serif"; src: url("assets/fonts/LiberationSerif-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Liberation Serif"; src: url("assets/fonts/LiberationSerif-Regular.ttf"); font-weight: 400; }
+      @font-face { font-family: "DejaVu Sans"; src: url("assets/fonts/DejaVuSans.ttf"); font-weight: 400; }
+      @font-face { font-family: "DejaVu Sans"; src: url("assets/fonts/DejaVuSans-Bold.ttf"); font-weight: 700; }
+      @font-face { font-family: "Noto Sans Mono"; src: url("assets/fonts/NotoSansMono-Regular.ttf"); font-weight: 400; }
+      @font-face { font-family: "Noto Sans Mono"; src: url("assets/fonts/NotoSansMono-Bold.ttf"); font-weight: 700; }
+
+      :root {
+        --bg: #0f1b2d; --panel: #16263d; --ink: #f2f4f7; --muted: #a9b8cc; --accent: #1f3a5f;
+        --ok: #1a9641; --bad: #d7191c; --ok-text: #5bd68a; --bad-text: #ff7a7a; --bar: #4f7fbf;
+      }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: "DejaVu Sans", sans-serif; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+      #glow { position: absolute; inset: 0; opacity: 0.5;
+        background: radial-gradient(ellipse 60% 55% at 50% 52%, #2a4f80 0%, rgba(31, 58, 95, 0) 70%); }
+      .scene { position: absolute; inset: 0; }
+      .serif { font-family: "Liberation Serif", serif; }
+      .mono { font-family: "Noto Sans Mono", monospace; }
+      .kicker { position: absolute; left: 200px; top: 112px; font-family: "Noto Sans Mono", monospace; font-size: 30px; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+      .title { position: absolute; left: 200px; top: 152px; margin: 0; font-family: "Liberation Serif", serif; font-size: 80px; font-weight: 700; }
+      .caption { position: absolute; left: 0; right: 0; text-align: center; font-family: "Liberation Serif", serif; font-weight: 700; }
+      .ok { color: var(--ok-text); }
+      .bad { color: var(--bad-text); }
+      .muted { color: var(--muted); }
+
+      /* prediction tiles rebuilt from results/qualitative/pgd_recovery.png */
+      .tile { position: absolute; top: 250px; width: 440px; }
+      .frame { position: relative; width: 440px; height: 440px; border: 10px solid var(--ok); box-sizing: border-box; background: #000; overflow: hidden; }
+      .frame img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .frame.red { border-color: var(--bad); }
+      .frame.blue { border-color: #2a4f80; }
+      .verdict { margin-top: 18px; font-size: 40px; font-weight: 700; text-align: center; height: 52px; position: relative; }
+      .verdict span { position: absolute; left: 0; right: 0; }
+      .op { position: absolute; top: 420px; width: 60px; text-align: center; font-size: 80px; font-weight: 700; color: var(--muted); }
+
+      /* S1 */
+      #hook-copy { position: absolute; left: 150px; top: 400px; width: 900px; }
+      #hook-kicker { position: static; }
+      #hook-line { font-size: 120px; font-weight: 700; line-height: 1.05; margin: 22px 0 0; }
+      #row-top { position: absolute; left: 0; right: 0; top: 120px; text-align: center; font-size: 46px; color: var(--bad-text); }
+      #row-bottom { top: 880px; font-size: 64px; }
+
+      /* S2 */
+      #s2-cap { top: 860px; font-size: 54px; }
+
+      /* S3 pipeline */
+      .chip { position: absolute; top: 470px; width: 290px; height: 230px; box-sizing: border-box; padding: 28px 22px; background: var(--panel); border-top: 6px solid var(--bar); }
+      .chip h3 { margin: 0 0 16px; font-size: 34px; white-space: nowrap; font-family: "Liberation Serif", serif; }
+      .chip p { margin: 0; font-size: 28px; line-height: 1.35; color: var(--muted); }
+      .arrow { position: absolute; top: 550px; width: 52px; text-align: center; font-size: 44px; color: var(--muted); }
+
+      /* bars */
+      .bar-row { position: absolute; left: 200px; width: 1520px; height: 80px; display: flex; align-items: center; }
+      .bar-label { width: 400px; font-size: 36px; }
+      .bar-track { position: relative; width: 840px; height: 46px; background: var(--panel); }
+      .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar); transform-origin: left center; }
+      .bar-fill.red { background: var(--bad); }
+      .bar-val { width: 280px; text-align: right; font-size: 48px; font-weight: 700; }
+      #s4-cap { top: 890px; font-size: 52px; }
+
+      /* compare rows (S5, S6) */
+      .cmp { position: absolute; left: 200px; width: 1520px; display: flex; align-items: baseline; }
+      .cmp-label { width: 560px; font-size: 44px; }
+      .cmp-from { width: 330px; font-size: 104px; font-weight: 700; text-align: right; color: var(--muted); }
+      .cmp-arrow { width: 150px; font-size: 80px; text-align: center; color: var(--muted); }
+      .cmp-to { width: 330px; font-size: 104px; font-weight: 700; text-align: right; }
+      .note { position: absolute; left: 200px; font-size: 40px; }
+
+      /* S7 runs */
+      .run { position: absolute; top: 330px; width: 500px; height: 440px; box-sizing: border-box; padding: 36px 34px; background: var(--panel); border-top: 8px solid var(--bad); }
+      .run.good { border-top-color: var(--ok); }
+      .run .rk { font-family: "Noto Sans Mono", monospace; font-size: 30px; color: var(--muted); letter-spacing: 0.06em; }
+      .run h3 { margin: 18px 0 30px; font-family: "Liberation Serif", serif; font-size: 48px; line-height: 1.15; }
+      .run p { margin: 0; font-size: 38px; line-height: 1.35; font-weight: 700; }
+
+      /* S8 */
+      #stat { position: absolute; left: 1230px; top: 400px; width: 660px; white-space: nowrap; }
+      #stat-num { font-size: 136px; font-weight: 700; line-height: 1; }
+      #stat-word { font-size: 56px; margin-top: 10px; }
+      #stat-note { font-size: 30px; margin-top: 18px; }
+
+      /* S9 */
+      #xm { position: absolute; left: 1190px; top: 360px; width: 660px; }
+      .xm-row { display: flex; align-items: baseline; height: 110px; }
+      .xm-row.head { height: 60px; font-size: 30px; color: var(--muted); }
+      .xm-k { width: 240px; font-size: 34px; }
+      .xm-v { width: 200px; text-align: right; font-size: 50px; font-weight: 700; }
+      .xm-row.head .xm-v { font-size: 30px; font-weight: 400; }
+      #s9-cap { top: 900px; font-size: 48px; }
+
+      /* outro */
+      #outro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      #outro-title { font-size: 112px; font-weight: 700; margin: 0; }
+      #outro-rule { width: 520px; height: 4px; background: var(--ok); margin-top: 40px; }
+      #outro-sub { font-size: 40px; margin-top: 34px; }
+      #outro-foot { font-size: 30px; margin-top: 64px; letter-spacing: 0.06em; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="72.5">
+      <div id="glow"></div>
+
+      <!-- S1: hook + attack 0 - 12.6 -->
+      <section id="s1" class="scene clip" data-start="0" data-duration="12.6" data-track-index="1">
+        <div id="hook-copy">
+          <div id="hook-kicker" class="kicker">ResNet-50 · Tiny ImageNet</div>
+          <h1 id="hook-line" class="serif">This is a goldfish.</h1>
+        </div>
+        <div id="row-top" class="mono">+ PGD noise · ε = 8/255 per pixel</div>
+        <div id="t1" class="tile" style="left: 240px">
+          <div id="t1-frame" class="frame">
+            <img id="t1-clean" src="assets/img/s1_clean.png" alt="goldfish, clean" />
+            <img id="t1-adv" src="assets/img/s1_adv.png" alt="goldfish, attacked" />
+          </div>
+          <div class="verdict"><span id="t1-ok" class="ok">✓ goldfish (100%)</span><span id="t1-bad" class="bad">✗ cougar (100%)</span></div>
+        </div>
+        <div id="t2" class="tile" style="left: 740px">
+          <div class="frame red"><img src="assets/img/s2_adv.png" alt="goldfish, attacked" /></div>
+          <div class="verdict"><span class="bad">✗ syringe (100%)</span></div>
+        </div>
+        <div id="t3" class="tile" style="left: 1240px">
+          <div class="frame red"><img src="assets/img/s3_adv.png" alt="goldfish, attacked" /></div>
+          <div class="verdict"><span class="bad">✗ umbrella (100%)</span></div>
+        </div>
+        <div id="row-bottom" class="caption">All three are goldfish.</div>
+      </section>
+
+      <!-- S2: amplified attack 12.6 - 19.5 -->
+      <section id="s2" class="scene clip" data-start="12.6" data-duration="6.9" data-track-index="1">
+        <div id="s2-k" class="kicker">The attack</div>
+        <h2 id="s2-t" class="title">The whole difference, amplified 10×</h2>
+        <div id="s2a" class="tile" style="left: 200px; top: 330px">
+          <div class="frame"><img src="assets/img/s1_clean.png" alt="clean goldfish" /></div>
+          <div class="verdict"><span class="ok">✓ goldfish</span></div>
+        </div>
+        <div id="s2p" class="op" style="left: 660px; top: 490px">+</div>
+        <div id="s2b" class="tile" style="left: 740px; top: 330px">
+          <div class="frame blue"><img src="assets/img/s1_diff.png" alt="perturbation amplified ten times" /></div>
+          <div class="verdict"><span class="muted">noise × 10</span></div>
+        </div>
+        <div id="s2e" class="op" style="left: 1200px; top: 490px">=</div>
+        <div id="s2c" class="tile" style="left: 1280px; top: 330px">
+          <div class="frame red"><img src="assets/img/s1_adv.png" alt="attacked goldfish" /></div>
+          <div class="verdict"><span class="bad">✗ cougar</span></div>
+        </div>
+        <div id="s2-cap" class="caption">At most 8/255 per pixel. Invisible to you. Decisive to ResNet-50.</div>
+      </section>
+
+      <!-- S3: pipeline 19.5 - 26.0 -->
+      <section id="s3" class="scene clip" data-start="19.5" data-duration="6.5" data-track-index="1">
+        <div id="s3-k" class="kicker">CSI 5170 final project</div>
+        <h2 id="s3-t" class="title">How fragile is a ResNet-50?</h2>
+        <div id="c1" class="chip" style="left: 131px"><h3>Tiny ImageNet</h3><p>200 classes</p><p>64 → 224 px</p></div>
+        <div id="a1" class="arrow" style="left: 421px">→</div>
+        <div id="c2" class="chip" style="left: 473px"><h3>ResNet-50</h3><p>transfer learned</p><p>head → fine-tune</p></div>
+        <div id="a2" class="arrow" style="left: 763px">→</div>
+        <div id="c3" class="chip" style="left: 815px; border-top-color: var(--bad)"><h3>Attacks</h3><p>Gaussian noise</p><p>FGSM · PGD</p></div>
+        <div id="a3" class="arrow" style="left: 1105px">→</div>
+        <div id="c4" class="chip" style="left: 1157px; border-top-color: var(--ok)"><h3>Defenses</h3><p>noise-aug · adversarial</p><p>denoising</p></div>
+        <div id="a4" class="arrow" style="left: 1447px">→</div>
+        <div id="c5" class="chip" style="left: 1499px"><h3>Explain</h3><p>Grad-CAM</p><p>Score-CAM</p></div>
+      </section>
+
+      <!-- S4: RQ1 bars 26.0 - 35.0 -->
+      <section id="s4" class="scene clip" data-start="26" data-duration="9" data-track-index="1">
+        <div id="s4-k" class="kicker">RQ1 · baseline top-1 accuracy · 960 val images</div>
+        <h2 id="s4-t" class="title">Random noise vs. aimed noise</h2>
+        <div id="b1" class="bar-row" style="top: 300px"><div class="bar-label">Clean</div><div class="bar-track"><div class="bar-fill" style="width: 68.12%"></div></div><div class="bar-val mono" data-v="68.1">68.1%</div></div>
+        <div id="b2" class="bar-row" style="top: 390px"><div class="bar-label">Gaussian σ=0.05</div><div class="bar-track"><div class="bar-fill" style="width: 59.06%"></div></div><div class="bar-val mono" data-v="59.1">59.1%</div></div>
+        <div id="b3" class="bar-row" style="top: 480px"><div class="bar-label">Gaussian σ=0.10</div><div class="bar-track"><div class="bar-fill" style="width: 47.08%"></div></div><div class="bar-val mono" data-v="47.1">47.1%</div></div>
+        <div id="b4" class="bar-row" style="top: 570px"><div class="bar-label">Gaussian σ=0.20</div><div class="bar-track"><div class="bar-fill" style="width: 19.79%"></div></div><div class="bar-val mono" data-v="19.8">19.8%</div></div>
+        <div id="b5" class="bar-row" style="top: 660px"><div class="bar-label">FGSM ε=8/255</div><div class="bar-track"><div class="bar-fill red" style="width: 2.29%"></div></div><div class="bar-val mono bad" data-v="2.3">2.3%</div></div>
+        <div id="b6" class="bar-row" style="top: 750px"><div class="bar-label">PGD ε=8/255</div><div class="bar-track"><div class="bar-fill red" style="width: 0.4%"></div></div><div class="bar-val mono bad" data-v="0.0">0.0%</div></div>
+        <div id="s4-cap" class="caption">Random noise has to be loud. Aimed noise only has to be right.</div>
+      </section>
+
+      <!-- S5: noise augmentation 35.0 - 41.0 -->
+      <section id="s5" class="scene clip" data-start="35" data-duration="6" data-track-index="1">
+        <div id="s5-k" class="kicker">Defense 1</div>
+        <h2 id="s5-t" class="title">Noise-augmented training</h2>
+        <div id="s5r1" class="cmp" style="top: 360px"><div class="cmp-label">Gaussian σ=0.20</div><div class="cmp-from mono">19.8%</div><div class="cmp-arrow">→</div><div class="cmp-to mono ok" id="s5v1">52.4%</div></div>
+        <div id="s5r2" class="cmp" style="top: 560px"><div class="cmp-label">PGD ε=8/255</div><div class="cmp-from mono">0.0%</div><div class="cmp-arrow">→</div><div class="cmp-to mono bad">0.0%</div></div>
+        <div id="s5n" class="note bad" style="top: 790px">Fixes random noise. No adversarial robustness.</div>
+      </section>
+
+      <!-- S6: denoising 41.0 - 46.5 -->
+      <section id="s6" class="scene clip" data-start="41" data-duration="5.5" data-track-index="1">
+        <div id="s6-k" class="kicker">Defense 2</div>
+        <h2 id="s6-t" class="title">Test-time denoising</h2>
+        <div id="s6r1" class="cmp" style="top: 420px"><div class="cmp-label">PGD + Gaussian filter</div><div class="cmp-from mono">0.0%</div><div class="cmp-arrow">→</div><div class="cmp-to mono ok" id="s6v1">22.8%</div></div>
+        <div id="s6n" class="note muted" style="top: 690px">Upper bound: the attack doesn't know about the filter.</div>
+      </section>
+
+      <!-- S7: adversarial training runs 46.5 - 55.0 -->
+      <section id="s7" class="scene clip" data-start="46.5" data-duration="8.5" data-track-index="1">
+        <div id="s7-k" class="kicker">Defense 3</div>
+        <h2 id="s7-t" class="title">Adversarial training, take three</h2>
+        <div id="r1" class="run" style="left: 160px"><div class="rk">RUN 1</div><h3>BatchNorm left trainable</h3><p class="bad">✗ Clean accuracy fell from 39% to 4%</p></div>
+        <div id="r2" class="run" style="left: 710px"><div class="rk">RUN 2</div><h3>BN frozen, top block only</h3><p class="bad">✗ Brittle: σ=0.05 noise → 2.7%</p></div>
+        <div id="r3" class="run good" style="left: 1260px"><div class="rk">RUN 3 · v3</div><h3>Full backbone, ε-curriculum 0 → 8/255</h3><p class="ok">✓ Clean ≈62% · PGD ≈13%</p></div>
+      </section>
+
+      <!-- S8: recovery 55.0 - 61.0 -->
+      <section id="s8" class="scene clip" data-start="55" data-duration="6" data-track-index="1">
+        <div id="s8-k" class="kicker">Recovery</div>
+        <h2 id="s8-t" class="title">The goldfish is back</h2>
+        <div id="d1" class="tile" style="left: 200px; top: 330px">
+          <div class="frame"><img src="assets/img/s1_defadv.png" alt="attacked goldfish, defended model" /></div>
+          <div class="verdict"><span class="ok">✓ goldfish (95%)</span></div>
+        </div>
+        <div id="d2" class="tile" style="left: 700px; top: 330px">
+          <div class="frame blue"><img src="assets/img/s1_cam_defadv.png" alt="Grad-CAM on the goldfish" /></div>
+          <div class="verdict"><span class="muted">Grad-CAM</span></div>
+        </div>
+        <div id="stat">
+          <div id="stat-num" class="mono ok"><span id="stat-n">27</span> / 28</div>
+          <div id="stat-word" class="serif">fooled images recovered</div>
+          <div id="stat-note" class="mono muted">PGD transfer attacks · ε = 8/255</div>
+        </div>
+      </section>
+
+      <!-- S9: explainability 61.0 - 68.5 -->
+      <section id="s9" class="scene clip" data-start="61" data-duration="7.5" data-track-index="1">
+        <div id="s9-k" class="kicker">RQ3 · which explanation to trust</div>
+        <h2 id="s9-t" class="title">Grad-CAM vs. Score-CAM</h2>
+        <div id="e1" class="tile" style="left: 200px; top: 330px">
+          <div class="frame blue"><img src="assets/img/gal_gradcam.png" alt="Grad-CAM heatmap" /></div>
+          <div class="verdict"><span class="muted">Grad-CAM</span></div>
+        </div>
+        <div id="e2" class="tile" style="left: 700px; top: 330px">
+          <div class="frame"><img src="assets/img/gal_scorecam.png" alt="Score-CAM heatmap" /></div>
+          <div class="verdict"><span class="ok">Score-CAM</span></div>
+        </div>
+        <div id="xm">
+          <div class="xm-row head"><div class="xm-k"></div><div class="xm-v">Grad</div><div class="xm-v">Score</div></div>
+          <div id="xm1" class="xm-row"><div class="xm-k">Avg. Drop ↓</div><div class="xm-v mono muted">29.0%</div><div class="xm-v mono ok">9.0%</div></div>
+          <div id="xm2" class="xm-row"><div class="xm-k">Stability ↑</div><div class="xm-v mono muted">0.826</div><div class="xm-v mono ok">0.979</div></div>
+          <div id="xm3" class="xm-row"><div class="xm-k">Conf. gain ↑</div><div class="xm-v mono muted">25.0%</div><div class="xm-v mono ok">33.3%</div></div>
+        </div>
+        <div id="s9-cap" class="caption">More faithful, more stable, at ~256 forward passes per image.</div>
+      </section>
+
+      <!-- S10: outro 68.5 - 72.5 -->
+      <section id="s10" class="scene clip" data-start="68.5" data-duration="4" data-track-index="1">
+        <div id="outro">
+          <h1 id="outro-title" class="serif">Adversarial Robustness of CNNs</h1>
+          <div id="outro-rule"></div>
+          <div id="outro-sub" class="muted">ResNet-50 · FGSM &amp; PGD · Grad-CAM &amp; Score-CAM</div>
+          <div id="outro-foot" class="mono muted">CSI 5170 · OAKLAND UNIVERSITY · FALL 2026</div>
+        </div>
+      </section>
+
+      <!-- Audio -->
+      <audio id="bg-music" src="assets/music/happy-beats-business-moves-vol-9-by-ende-dot-app.mp3"
+        data-start="0" data-duration="72.5" data-track-index="10" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":0.4,"v":0.3},{"t":70.5,"v":0.3},{"t":72.5,"v":0}]}]}'></audio>
+      <audio id="x-flip" src="assets/sfx/impactSoft_medium_001.ogg" data-start="3.68" data-duration="0.18" data-track-index="11" data-volume="0.8"></audio>
+      <audio id="x-glitch" src="assets/sfx/glitch_002.ogg" data-start="3.70" data-duration="0.03" data-track-index="12" data-volume="0.55"></audio>
+      <audio id="x-card2" src="assets/sfx/card-slide-1.ogg" data-start="6.82" data-duration="0.6" data-track-index="13" data-volume="0.7"></audio>
+      <audio id="x-card3" src="assets/sfx/card-slide-1.ogg" data-start="7.88" data-duration="0.6" data-track-index="14" data-volume="0.7"></audio>
+      <audio id="x-diff" src="assets/sfx/drop_001.ogg" data-start="14.20" data-duration="0.11" data-track-index="11" data-volume="0.65"></audio>
+      <audio id="x-adv" src="assets/sfx/impactSoft_medium_001.ogg" data-start="15.26" data-duration="0.18" data-track-index="12" data-volume="0.7"></audio>
+      <audio id="x-chip1" src="assets/sfx/drop_001.ogg" data-start="20.51" data-duration="0.11" data-track-index="13" data-volume="0.6"></audio>
+      <audio id="x-chip5" src="assets/sfx/drop_001.ogg" data-start="24.72" data-duration="0.11" data-track-index="14" data-volume="0.6"></audio>
+      <audio id="x-bar1" src="assets/sfx/drop_001.ogg" data-start="26.83" data-duration="0.11" data-track-index="11" data-volume="0.6"></audio>
+      <audio id="x-pgd" src="assets/sfx/impactSoft_medium_001.ogg" data-start="29.99" data-duration="0.18" data-track-index="12" data-volume="0.75"></audio>
+      <audio id="x-aug" src="assets/sfx/drop_001.ogg" data-start="36.25" data-duration="0.11" data-track-index="13" data-volume="0.65"></audio>
+      <audio id="x-den" src="assets/sfx/drop_001.ogg" data-start="41.78" data-duration="0.11" data-track-index="14" data-volume="0.65"></audio>
+      <audio id="x-r1" src="assets/sfx/error_005.ogg" data-start="47.30" data-duration="0.5" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="x-r2" src="assets/sfx/error_005.ogg" data-start="48.90" data-duration="0.5" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="x-r3" src="assets/sfx/impactBell_heavy_000.ogg" data-start="50.50" data-duration="1.48" data-track-index="13" data-volume="0.6"></audio>
+      <audio id="x-rec" src="assets/sfx/drop_001.ogg" data-start="55.60" data-duration="0.11" data-track-index="14" data-volume="0.65"></audio>
+      <audio id="x-xm" src="assets/sfx/drop_001.ogg" data-start="62.70" data-duration="0.11" data-track-index="11" data-volume="0.6"></audio>
+      <audio id="x-bong" src="assets/sfx/bong_001.ogg" data-start="68.68" data-duration="0.12" data-track-index="12" data-volume="0.7"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const E = "power3.out";
+      const rise = (sel, t, d = 0.45, y = 28) => tl.fromTo(sel, { opacity: 0, y }, { opacity: 1, y: 0, duration: d, ease: E }, t);
+      const slide = (sel, t, x = 100) => tl.fromTo(sel, { opacity: 0, x }, { opacity: 1, x: 0, duration: 0.45, ease: E }, t);
+      const fade = (sel, t) => tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: 0.4 }, t);
+      const out = (scene, t) => tl.to("#" + scene + " > *", { opacity: 0, duration: 0.25, ease: "power1.in" }, t);
+      const head = (s, t) => { fade("#" + s + "-k", t); rise("#" + s + "-t", t); };
+      const count = (el, to, t, dec, d = 0.6) => {
+        const o = { v: 0 };
+        tl.fromTo(o, { v: 0 }, { v: to, duration: d, ease: "power2.out", onUpdate: () => { el.textContent = o.v.toFixed(dec) + (dec >= 0 && el.dataset.pct !== "no" ? "%" : ""); } }, t);
+      };
+
+      // ---------- S1: hook + attack ----------
+      gsap.set("#t1", { x: 1000, y: 20, scale: 1.2 });
+      gsap.set(["#t1-adv", "#t1-bad", "#row-top", "#row-bottom", "#t2", "#t3"], { opacity: 0 });
+      tl.fromTo("#hook-line", { scale: 0.97 }, { scale: 1, duration: 3.6, ease: "none" }, 0);
+      // beat-locked: 3.70s
+      tl.set("#t1-adv", { opacity: 1 }, 3.7);
+      tl.set("#t1-frame", { borderColor: "#d7191c" }, 3.7);
+      tl.set("#t1-ok", { opacity: 0 }, 3.7);
+      tl.set("#t1-bad", { opacity: 1 }, 3.7);
+      tl.fromTo("#t1", { rotation: -1.5 }, { rotation: 0, duration: 0.35, ease: "elastic.out(1,0.4)", immediateRender: false }, 3.7);
+      tl.fromTo("#row-top", { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.3, ease: E }, 3.72);
+      tl.to("#hook-copy", { opacity: 0, x: -60, duration: 0.4, ease: "power2.in" }, 6.2);
+      tl.to("#t1", { x: 0, y: 0, scale: 1, duration: 0.55, ease: "power3.inOut" }, 6.2);
+      // beat-grid: 6.86 / 7.92
+      slide("#t2", 6.84, 120);
+      slide("#t3", 7.9, 120);
+      rise("#row-bottom", 8.96, 0.4, 20);
+      out("s1", 12.32);
+
+      // ---------- S2: amplified attack ----------
+      head("s2", 12.65);
+      rise("#s2a", 13.18);
+      fade("#s2p", 13.9);
+      rise("#s2b", 14.22);
+      fade("#s2e", 14.95);
+      rise("#s2c", 15.28);
+      rise("#s2-cap", 15.8, 0.45, 20);
+      out("s2", 19.22);
+
+      // ---------- S3: pipeline ----------
+      head("s3", 19.55);
+      // beat-grid (alternate beats): 20.53 / 21.58 / 22.64 / 23.69 / 24.74
+      [["#c1", 20.53], ["#c2", 21.58], ["#c3", 22.64], ["#c4", 23.69], ["#c5", 24.74]].forEach(([s, t], i) => {
+        rise(s, t, 0.4, 40);
+        if (i > 0) fade("#a" + i, t - 0.15);
+      });
+      out("s3", 25.72);
+
+      // ---------- S4: RQ1 bars ----------
+      head("s4", 26.05);
+      // beat-grid: 26.85 / 27.39 / 27.92 / 28.44 / 29.48, PGD beat-locked 30.01
+      [["#b1", 26.85], ["#b2", 27.39], ["#b3", 27.92], ["#b4", 28.44], ["#b5", 29.48], ["#b6", 30.01]].forEach(([s, t]) => {
+        tl.fromTo(s, { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.3, ease: E }, t);
+        tl.fromTo(s + " .bar-fill", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, t + 0.05);
+        const el = document.querySelector(s + " .bar-val");
+        count(el, parseFloat(el.dataset.v), t + 0.05, 1, 0.5);
+      });
+      tl.fromTo("#b6 .bar-val", { scale: 1 }, { scale: 1.18, duration: 0.18, yoyo: true, repeat: 1, ease: "power2.out" }, 30.1);
+      rise("#s4-cap", 31.05, 0.45, 20);
+      out("s4", 34.72);
+
+      // ---------- S5: noise augmentation ----------
+      head("s5", 35.05);
+      slide("#s5r1", 35.75, -40);
+      count(document.getElementById("s5v1"), 52.4, 36.25, 1, 0.8);
+      slide("#s5r2", 37.4, -40);
+      rise("#s5n", 38.45, 0.4, 20);
+      out("s5", 40.72);
+
+      // ---------- S6: denoising ----------
+      head("s6", 41.05);
+      slide("#s6r1", 41.6, -40);
+      count(document.getElementById("s6v1"), 22.8, 41.8, 1, 0.8);
+      // beat-locked: 43.70
+      rise("#s6n", 43.7, 0.4, 20);
+      out("s6", 46.22);
+
+      // ---------- S7: AT runs ----------
+      head("s7", 46.55);
+      rise("#r1", 47.3, 0.45, 40);
+      rise("#r2", 48.9, 0.45, 40);
+      tl.fromTo("#r3", { opacity: 0, y: 40, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 50.5);
+      out("s7", 54.72);
+
+      // ---------- S8: recovery ----------
+      head("s8", 55.05);
+      tl.fromTo("#d1", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 55.6);
+      slide("#d2", 56.6, 60);
+      rise("#stat", 57.4, 0.45, 30);
+      const sn = document.getElementById("stat-n"); sn.dataset.pct = "no";
+      count(sn, 27, 57.45, 0, 0.8);
+      out("s8", 60.72);
+
+      // ---------- S9: explainability ----------
+      head("s9", 61.05);
+      rise("#e1", 61.6);
+      rise("#e2", 62.15);
+      fade("#xm .head", 62.7);
+      slide("#xm1", 62.7, 40);
+      slide("#xm2", 63.4, 40);
+      slide("#xm3", 64.1, 40);
+      rise("#s9-cap", 64.9, 0.45, 20);
+      out("s9", 68.22);
+
+      // ---------- S10: outro ----------
+      rise("#outro-title", 68.6, 0.5, 30);
+      tl.fromTo("#outro-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: E }, 68.85);
+      fade("#outro-sub", 69.05);
+      fade("#outro-foot", 69.35);
+      tl.to("#outro", { opacity: 0, duration: 0.6, ease: "power1.in" }, 71.9);
+
+      // ---------- audio-reactive glow (pre-extracted RMS, per frame) ----------
+      const glow = document.getElementById("glow");
+      const R = window.AUDIO_RMS;
+      for (let f = 0; f < R.v.length; f++) {
+        tl.call(((v) => () => { glow.style.opacity = (0.35 + 0.45 * v).toFixed(3); })(R.v[f]), [], f / R.fps);
+      }
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

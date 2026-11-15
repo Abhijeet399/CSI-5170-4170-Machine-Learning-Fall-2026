@@ -1,0 +1,1 @@
+A ResNet-50 was 100% sure this goldfish was a cougar. One minute on my CSI 5170 project: how 8/255 of aimed noise takes accuracy from 68% to 0%, which defenses actually help, and why Score-CAM beats Grad-CAM.

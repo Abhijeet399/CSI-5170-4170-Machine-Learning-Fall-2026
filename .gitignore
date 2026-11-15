@@ -10,3 +10,7 @@ models/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# brag video: tool cache and unlicensed raw music source
+brag-output/composition/.hyperframes/
+brag-output/composition/assets/music/
