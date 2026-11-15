@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CSI 5170 Phase 2 Report</title>
+<style>
+  @page { size: Letter; margin: 0.9in; }
+  :root { --ink:#111; --muted:#555; --rule:#999; --accent:#1f3a5f; --shade:#f2f4f7; }
+  html, body { background:#fff; color:var(--ink); }
+  body { font-family: "Times New Roman", "Liberation Serif", "DejaVu Serif", Georgia, serif;
+         font-size: 11pt; line-height: 1.38; margin: 0; }
+  .titleblock { text-align:center; margin-bottom: 18pt; }
+  .titleblock .inst { font-size: 10.5pt; line-height: 1.3; }
+  .titleblock h1 { font-size: 16pt; line-height: 1.25; margin: 14pt 0 8pt; color: var(--accent); }
+  .titleblock .sub { font-size: 11pt; color: var(--muted); }
+  h2 { font-size: 13pt; color: var(--accent); border-bottom: 0.75pt solid var(--accent);
+       padding-bottom: 2pt; margin: 18pt 0 8pt; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 12pt 0 4pt; break-after: avoid; }
+  p { margin: 0 0 7pt; text-align: justify; }
+  ul, ol { margin: 0 0 7pt; padding-left: 20pt; }
+  li { margin-bottom: 2.5pt; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0 4pt; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 0.75pt solid var(--rule); padding: 3pt 6pt; text-align: center; }
+  th { background: var(--shade); font-weight: bold; }
+  td.l, th.l { text-align: left; }
+  tr.stale td { color: #666; font-style: italic; }
+  .tcap { font-size: 10pt; font-weight: bold; margin-top: 10pt; break-after: avoid; }
+  .tnote { font-size: 9pt; color: var(--muted); margin: 2pt 0 10pt; text-align: left; }
+  figure { margin: 10pt 0 12pt; text-align: center; break-inside: avoid; }
+  figure img { max-width: 100%; }
+  figure img.tall { max-height: 7.6in; width: auto; }
+  figcaption { font-size: 9.5pt; color: #222; text-align: justify; margin-top: 5pt; }
+  .box { border: 0.75pt solid var(--rule); background: #fafafa; padding: 6pt 9pt; margin: 8pt 0; font-size: 10pt; break-inside: avoid; }
+  .box p { margin-bottom: 3pt; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; }
+  .refs li { margin-bottom: 4pt; font-size: 10pt; text-align: left; }
+  .pb { break-before: page; }
+  .kv td:first-child { text-align:left; width: 30%; font-weight:bold; background: var(--shade); }
+  .kv td { text-align:left; }
+  svg text { font-family: "DejaVu Sans", Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<div class="titleblock">
+  <div class="inst">
+    Oakland University<br>
+    School of Engineering and Computer Science<br>
+    Department of Computer Science and Engineering<br>
+    CSI 5170/4170: Machine Learning, Fall 2026<br>
+    <b>Final Project – Phase #2 Report</b>
+  </div>
+  <h1>Adversarial Robustness of CNNs: Comparative Analysis of Gaussian Noise and Adversarial Attacks, Defense Strategies, and Explainability with Grad-CAM &amp; Score-CAM</h1>
+  <div class="sub">Abhijeet Bhattacharya · bhattacharya@oakland.edu</div>
+</div>
+
+<h2>1. Project Identification</h2>
+<p><b>Project title:</b> <i>Adversarial Robustness of CNNs: Comparative Analysis of Gaussian Noise and Adversarial Attacks, Defense Strategies, and Explainability with Grad-CAM &amp; Score-CAM.</i></p>
+<p>The project measures how a transfer-learned ResNet-50 image classifier degrades under random (Gaussian) noise and under gradient-based adversarial attacks (FGSM, PGD). It compares three defenses (noise-augmented training, adversarial training, and test-time input denoising) and uses Grad-CAM and Score-CAM to check whether the model's visual explanations are faithful and stable when the input is perturbed.</p>
+
+<h2>2. Groups</h2>
+<table class="kv" style="width:70%">
+  <tr><th class="l">Student</th><th class="l">E-mail</th></tr>
+  <tr><td>Abhijeet Bhattacharya</td><td>bhattacharya@oakland.edu</td></tr>
+</table>
+
+<h2>3. Data Availability</h2>
+<p><b>Access to data.</b> The project uses <b>Tiny ImageNet</b> (Stanford CS231n) [1], a public subset of ImageNet [2] with 200 object classes. The archive is downloaded directly from <code>http://cs231n.stanford.edu/tiny-imagenet-200.zip</code> and extracted to <code>./tiny-imagenet-200/</code> by the download step in <code>final_project.py</code>. No credentials or licensing agreement are required. The dataset contains 100,000 training images (500 per class) and 10,000 labelled validation images (50 per class). The official test split has no public labels, so the labelled validation split is the held-out evaluation set.</p>
+
+<h2>3. Data Preparation</h2>
+<p><b>Data structures and formats.</b> The data are RGB images stored as 64×64 JPEG files. Training images are organized as <code>train/&lt;wnid&gt;/images/*.JPEG</code>. Validation images come as one flat folder plus an annotation file, <code>val_annotations.txt</code>, that maps each file to its class WordNet ID. Labels are one-hot vectors over 200 classes. In memory, a batch is a <code>float32</code> tensor of shape <code>(32, 224, 224, 3)</code>.</p>
+<p><b>Cleaning and reorganization.</b> <code>reorganize_val_folder()</code> moves each validation image into a per-class subfolder (<code>val/&lt;wnid&gt;/</code>) using <code>val_annotations.txt</code>. This lets the training and validation splits load through the same Keras <code>flow_from_directory</code> pipeline with an identical class index.</p>
+<p><b>Transformation and normalization.</b></p>
+<ul>
+  <li><b>Resize:</b> each image is upscaled from 64×64 to 224×224 to match ResNet-50's ImageNet input resolution.</li>
+  <li><b>Scaling:</b> pixel values are rescaled to <b>[0, 1]</b> (<code>rescale=1/255</code>). All perturbations, clipping and ε budgets are defined in this [0, 1] space.</li>
+  <li><b>Model-side normalization:</b> ImageNet "caffe" preprocessing (×255, RGB→BGR, per-channel mean subtraction) is built into the model as its first layers (<code>Rescaling(255)</code> followed by <code>resnet50.preprocess_input</code>). Attack gradients therefore flow through the normalization, and every input to the model stays in [0, 1].</li>
+</ul>
+<p><b>Augmentation.</b> All training uses random horizontal flips. The <i>noise-augmented</i> defense also adds on-the-fly Gaussian noise (σ = 0.10 in [0, 1] units) to every training image, followed by clipping. Gaussian, FGSM and PGD perturbations for evaluation, and PGD examples for adversarial training, are <b>generated on the fly</b> per batch rather than stored on disk.</p>
+
+<h2>4. Design Specifications</h2>
+<h3>4.1 ML pipeline architecture</h3>
+<figure>
+<svg viewBox="0 0 1000 640" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ML pipeline architecture diagram">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f3a5f"/>
+    </marker>
+    <style>
+      .stage { fill:#eef2f8; stroke:#1f3a5f; stroke-width:1.6; }
+      .pert  { fill:#fbeeee; stroke:#8a2b2b; stroke-width:1.6; }
+      .def   { fill:#edf6ee; stroke:#2b6b3a; stroke-width:1.6; }
+      .out   { fill:#f6f6f6; stroke:#666; stroke-width:1.2; stroke-dasharray:5 3; }
+      .hd { font-size:15px; font-weight:bold; fill:#111; }
+      .tx { font-size:12px; fill:#222; }
+      .io { font-size:11px; fill:#555; font-style:italic; }
+      .num { font-size:12px; font-weight:bold; fill:#fff; }
+      .arr { stroke:#1f3a5f; stroke-width:1.8; fill:none; marker-end:url(#ah); }
+    </style>
+  </defs>
+
+  <!-- Row 1 -->
+  <rect class="stage" x="20" y="20" width="280" height="130" rx="8"/>
+  <circle cx="44" cy="44" r="13" fill="#1f3a5f"/><text class="num" x="44" y="48" text-anchor="middle">1</text>
+  <text class="hd" x="66" y="49">Data acquisition</text>
+  <text class="tx" x="36" y="76">Download tiny-imagenet-200.zip</text>
+  <text class="tx" x="36" y="94">200 classes · 100k train / 10k val</text>
+  <text class="tx" x="36" y="112">Reorganize val/ into class folders</text>
+  <text class="io" x="36" y="136">out: 64×64 RGB JPEG + wnid labels</text>
+
+  <rect class="stage" x="360" y="20" width="280" height="130" rx="8"/>
+  <circle cx="384" cy="44" r="13" fill="#1f3a5f"/><text class="num" x="384" y="48" text-anchor="middle">2</text>
+  <text class="hd" x="406" y="49">Preprocessing</text>
+  <text class="tx" x="376" y="76">Upscale 64→224, scale to [0,1]</text>
+  <text class="tx" x="376" y="94">Horizontal flip (+σ=0.10 noise for</text>
+  <text class="tx" x="376" y="112">noise-aug model); one-hot labels</text>
+  <text class="io" x="376" y="136">out: (B,224,224,3) float32, (B,200)</text>
+
+  <rect class="stage" x="700" y="20" width="280" height="130" rx="8"/>
+  <circle cx="724" cy="44" r="13" fill="#1f3a5f"/><text class="num" x="724" y="48" text-anchor="middle">3</text>
+  <text class="hd" x="746" y="49" style="font-size:13.5px">ResNet-50 transfer training</text>
+  <text class="tx" x="716" y="76">In-model caffe preprocessing → ImageNet</text>
+  <text class="tx" x="716" y="94">backbone → GAP → Dropout → Dense(200)</text>
+  <text class="tx" x="716" y="112">Stage A: head only · Stage B: fine-tune</text>
+  <text class="io" x="716" y="136">out: baseline .weights.h5 (softmax 200)</text>
+
+  <path class="arr" d="M300,85 L356,85"/>
+  <path class="arr" d="M640,85 L696,85"/>
+
+  <!-- Row 2 -->
+  <rect class="pert" x="20" y="215" width="440" height="165" rx="8"/>
+  <circle cx="44" cy="239" r="13" fill="#8a2b2b"/><text class="num" x="44" y="243" text-anchor="middle">4a</text>
+  <text class="hd" x="66" y="244">Perturbations (generated on the fly)</text>
+  <text class="tx" x="36" y="272">• Gaussian noise: σ ∈ {0.05, 0.10, 0.20}, clipped to [0,1]</text>
+  <text class="tx" x="36" y="292">• FGSM: x + ε·sign(∇ₓL), ε = 8/255 (single step)</text>
+  <text class="tx" x="36" y="312">• PGD: ε = 8/255, α = 2/255, 7 steps, random start,</text>
+  <text class="tx" x="50" y="330">L∞ projection (white-box vs. evaluated model)</text>
+  <text class="io" x="36" y="364">out: perturbed batch x′ with ‖x′−x‖∞ ≤ ε (attacks)</text>
+
+  <rect class="def" x="540" y="215" width="440" height="165" rx="8"/>
+  <circle cx="564" cy="239" r="13" fill="#2b6b3a"/><text class="num" x="564" y="243" text-anchor="middle">4b</text>
+  <text class="hd" x="586" y="244">Defenses</text>
+  <text class="tx" x="556" y="272">• Noise-augmented training (σ = 0.10)</text>
+  <text class="tx" x="556" y="292">• Adversarial training (v3): frozen BN, full backbone,</text>
+  <text class="tx" x="570" y="310">0.5·clean + 0.5·adv loss, PGD ε-curriculum 0→8/255,</text>
+  <text class="tx" x="570" y="328">checkpoint on robust-val accuracy</text>
+  <text class="tx" x="556" y="348">• Test-time denoising (Gaussian σ=1 / median filter)</text>
+  <text class="io" x="556" y="368">out: noise-aug + adversarial .weights.h5, filter fn</text>
+
+  <!-- 3 -> 4a, 3 -> 4b -->
+  <path class="arr" d="M840,150 L840,182 L240,182 L240,211"/>
+  <path class="arr" d="M840,150 L840,211"/>
+  <text class="io" x="850" y="190">warm start from baseline</text>
+
+  <!-- Row 3 -->
+  <rect class="stage" x="20" y="450" width="300" height="150" rx="8"/>
+  <circle cx="44" cy="474" r="13" fill="#1f3a5f"/><text class="num" x="44" y="478" text-anchor="middle">5</text>
+  <text class="hd" x="66" y="479">Robustness evaluation</text>
+  <text class="tx" x="36" y="506">3 models × {clean, gauss×3, FGSM, PGD}</text>
+  <text class="tx" x="36" y="524">+ PGD → denoise; 30 val batches (960 img)</text>
+  <text class="tx" x="36" y="542">Transfer study: baseline-crafted attacks</text>
+  <text class="tx" x="36" y="560">shown to defended models</text>
+  <text class="io" x="36" y="586">out: top-1 accuracy tables (CSV)</text>
+
+  <rect class="stage" x="360" y="450" width="300" height="150" rx="8"/>
+  <circle cx="384" cy="474" r="13" fill="#1f3a5f"/><text class="num" x="384" y="478" text-anchor="middle">6</text>
+  <text class="hd" x="406" y="479">Explainability</text>
+  <text class="tx" x="376" y="506">Grad-CAM &amp; Score-CAM heatmaps</text>
+  <text class="tx" x="376" y="524">on clean / noisy / adversarial inputs</text>
+  <text class="tx" x="376" y="542">Faithfulness: Avg. Drop %, Inc. in Conf. %</text>
+  <text class="tx" x="376" y="560">Stability: heatmap corr. under σ=0.05</text>
+  <text class="io" x="376" y="586">out: metrics CSV + heatmap galleries</text>
+
+  <rect class="out" x="700" y="450" width="280" height="150" rx="8"/>
+  <text class="hd" x="716" y="479">Artifacts (file-based tracking)</text>
+  <text class="tx" x="716" y="506">results/robustness_comparison.csv</text>
+  <text class="tx" x="716" y="524">results/denoising_defense.csv</text>
+  <text class="tx" x="716" y="542">results/explanation_metrics.csv</text>
+  <text class="tx" x="716" y="560">results/*.png, qualitative/*.png</text>
+  <text class="io" x="716" y="586">models/*.weights.h5 checkpoints</text>
+
+  <!-- 4a,4b -> 5 ; 5 -> 6 -> artifacts -->
+  <path class="arr" d="M170,380 L170,446"/>
+  <path class="arr" d="M760,380 L760,415 L250,415 L250,446"/>
+  <text class="io" x="180" y="408">x′</text>
+  <text class="io" x="770" y="405">defended models + filter</text>
+  <path class="arr" d="M320,525 L356,525"/>
+  <path class="arr" d="M660,525 L696,525"/>
+</svg>
+<figcaption><b>Figure 1.</b> End-to-end ML pipeline. Stages 1–3 produce the clean baseline. Stage 4a generates perturbed inputs and stage 4b produces the defended models (warm-started from the baseline) and the test-time filter. Stage 5 measures top-1 accuracy under every perturbation, and stage 6 explains and scores the predictions. Every stage writes CSV/PNG/weights artifacts to disk. Italic lines give each stage's output structure.</figcaption>
+</figure>
+
+<h3>4.2 Pipeline stages</h3>
+<ol>
+  <li><b>Data collection:</b> download and extract Tiny ImageNet, then reorganize the validation split into class folders (Section 3).</li>
+  <li><b>Preprocessing:</b> stream batches with <code>ImageDataGenerator</code> (resize to 224×224, rescale to [0, 1], horizontal flip, optional σ = 0.10 noise).</li>
+  <li><b>Model training:</b> (a) baseline ResNet-50 by two-stage transfer learning; (b) noise-augmented model; (c) adversarially trained model (Section 5).</li>
+  <li><b>Perturbation &amp; defense:</b> build Gaussian/FGSM/PGD inputs on the fly; optionally apply a Gaussian or median denoising filter before the model.</li>
+  <li><b>Evaluation:</b> top-1 accuracy for each (model × condition) pair on a fixed, seeded validation subset (30 batches × 32 = 960 images, seed 42).</li>
+  <li><b>Explainability:</b> Grad-CAM/Score-CAM heatmaps and faithfulness/stability metrics.</li>
+  <li><b>Deployment / reporting:</b> this is a research study, so there is no serving endpoint. The outputs are weights-only checkpoints (<code>.weights.h5</code>), result CSVs and figures. <code>eval_only.py</code> regenerates every table from the saved checkpoints without retraining.</li>
+</ol>
+
+<h3>4.3 Input/output structures and data flow</h3>
+<table>
+  <tr><th class="l">Stage</th><th class="l">Input</th><th class="l">Output</th></tr>
+  <tr><td class="l">Loader</td><td class="l">JPEG files, wnid folders</td><td class="l"><code>x</code>: (32, 224, 224, 3) float32 in [0,1]; <code>y</code>: (32, 200) one-hot</td></tr>
+  <tr><td class="l">Model</td><td class="l"><code>x</code> in [0,1]</td><td class="l">softmax probabilities (32, 200)</td></tr>
+  <tr><td class="l">Attack / noise</td><td class="l"><code>x, y</code>, model (attacks need gradients)</td><td class="l"><code>x′</code>, same shape; ‖x′−x‖<sub>∞</sub> ≤ 8/255 for FGSM/PGD</td></tr>
+  <tr><td class="l">Denoiser</td><td class="l"><code>x′</code></td><td class="l">filtered <code>x′</code> (per-channel <code>scipy.ndimage</code>)</td></tr>
+  <tr><td class="l">CAM</td><td class="l">one image, target class, last conv layer (<code>conv5_block3_out</code>, 7×7×2048)</td><td class="l">224×224 heatmap in [0,1]</td></tr>
+  <tr><td class="l">Evaluator</td><td class="l">predictions vs. labels</td><td class="l">accuracy rows → CSV</td></tr>
+</table>
+
+<h2>5. Approach</h2>
+<p><b>Learning paradigm.</b> The task is <b>supervised</b> multi-class image classification (200 classes) trained with categorical cross-entropy. Robustness is studied by perturbing the model's inputs at test time and, for two of the defenses, at training time.</p>
+<p><b>Model.</b> A <b>ResNet-50</b> convolutional neural network [3] pretrained on ImageNet, followed by global average pooling, dropout and a 200-way softmax layer. The baseline is trained in two stages. <i>Stage A</i> freezes the backbone and trains the new head (Adam, lr 1e-4). <i>Stage B</i> unfreezes layers from index 140 onward and fine-tunes at lr 1e-5, with ReduceLROnPlateau, early stopping and best-checkpoint saving.</p>
+<p><b>Attacks.</b> <i>FGSM</i> [4] takes one signed-gradient step of size ε = 8/255. <i>PGD</i> [5] is the iterative version: random start in the ε-ball, 7 steps of α = 2/255, and projection back onto the L<sub>∞</sub> ball and [0, 1] after every step. Both attacks are untargeted and maximize cross-entropy. As a non-adversarial baseline perturbation, i.i.d. Gaussian noise is added at σ ∈ {0.05, 0.10, 0.20}, a common corruption setting [6].</p>
+<p><b>Defenses.</b></p>
+<ul>
+  <li><b>Noise-augmented training:</b> fine-tune (from layer 140) on images with σ = 0.10 Gaussian noise added.</li>
+  <li><b>Adversarial training</b> [5]. The final recipe (v3, <code>retrain_adversarial_v3.py</code>) warm-starts from the baseline and uses: <b>frozen BatchNorm</b> (all BN layers kept in inference mode); the <b>full backbone trainable</b>; a <b>mixed loss</b> 0.5·CE(clean) + 0.5·CE(PGD); an <b>ε-curriculum</b> in which the PGD training budget ramps linearly 0 → 8/255 over the first 3 of 10 epochs; dropout 0.2; Adam at lr 2e-5. Each epoch is checkpointed on <b>robust-validation accuracy</b> (PGD at full ε = 8/255 on 20 validation batches), with early-stopping patience 3.</li>
+  <li><b>Test-time denoising:</b> a per-channel Gaussian filter (σ = 1.0, the configuration evaluated here) or a median filter applied to the attacked input before classification.</li>
+</ul>
+<p><b>Explainability.</b> <i>Grad-CAM</i> [7] weights the last convolutional feature maps by their spatially averaged class-score gradients. <i>Score-CAM</i> [8] is gradient-free: it masks the input with each upsampled activation map (the 256 highest-activation channels here) and weights each map by the class score obtained. Faithfulness is measured with Average Drop % and Increase in Confidence % [9]. Stability is the Pearson correlation between the heatmap of a clean image and that of the same image with σ = 0.05 noise.</p>
+<p><b>Why this approach suits the problem.</b> Transfer learning from ImageNet gives a strong classifier on 64-px images within a course compute budget, and ResNet-50 is the standard backbone in the robustness literature, so results are comparable. FGSM and PGD are the canonical first-order white-box attacks; PGD in particular is the accepted strong baseline for L<sub>∞</sub> robustness [5]. Gaussian noise is a natural control because it perturbs every pixel much more on average but contains no gradient information. The three defenses cover the main families (data augmentation, robust optimization and input transformation). CAM methods fit the convolutional backbone directly. Using one gradient-based and one gradient-free method separates real changes in the model's attention from artifacts of the gradients, which are themselves what adversarial attacks manipulate.</p>
+
+<h2>6. Technical Design</h2>
+<table class="kv">
+  <tr><td>Language</td><td>Python 3.10</td></tr>
+  <tr><td>ML framework</td><td>TensorFlow 2 with Keras (Keras 3 API): <code>keras.applications.ResNet50</code>, <code>ImageDataGenerator</code>, <code>tf.GradientTape</code> for attacks and Grad-CAM, <code>@tf.function</code> custom training step for adversarial training</td></tr>
+  <tr><td>Scientific stack</td><td>NumPy; SciPy (<code>scipy.ndimage.gaussian_filter</code> / <code>median_filter</code> for denoising); pandas (result tables); Matplotlib (figures, heatmap overlays); tqdm (progress)</td></tr>
+  <tr><td>Development</td><td>Jupyter notebook (<code>Final_Project.ipynb</code>) for exploration, plus standalone scripts: <code>final_project.py</code> (full pipeline), <code>retrain_adversarial.py</code> / <code>retrain_adversarial_v3.py</code> (AT runs), <code>eval_only.py</code> (evaluation from checkpoints), <code>qualitative_results.py</code> (recovery figures)</td></tr>
+  <tr><td>Version control</td><td>Git</td></tr>
+  <tr><td>Hardware</td><td>2× NVIDIA RTX 6000 Ada (48 GB) GPUs, with GPU memory growth enabled</td></tr>
+  <tr><td>Experiment tracking</td><td>File-based: CSV result logs in <code>results/</code>, weights-only <code>.weights.h5</code> checkpoints in <code>models/</code>, fixed seed (42). No MLflow and no CI/CD pipeline; reproducibility relies on fixed configs in each script and on <code>eval_only.py</code> regenerating all tables.</td></tr>
+</table>
+
+<h2>7. Experimental Setup</h2>
+<h3>7.1 Research questions</h3>
+<ul>
+  <li><b>RQ1:</b> How much does Gaussian noise degrade classification accuracy compared with adversarial attacks (FGSM, PGD)?</li>
+  <li><b>RQ2:</b> Which defenses (noise-augmented training, adversarial training, input denoising) are effective against each type of perturbation?</li>
+  <li><b>RQ3:</b> Do Grad-CAM and Score-CAM differ, and which is more faithful and more stable?</li>
+</ul>
+
+<h3>7.2 Metrics and protocol</h3>
+<ul>
+  <li><b>Top-1 accuracy</b> on a fixed, seeded subset of the validation set (30 batches × 32 = 960 images, <code>EVAL_BATCHES = 30</code>) under: clean; Gaussian σ = 0.05/0.10/0.20; FGSM ε = 8/255; PGD ε = 8/255, 7 steps.</li>
+  <li><b>White-box robust accuracy:</b> the FGSM and PGD perturbations in Table 1 are crafted against <i>each evaluated model's own gradients</i>. This is the headline robustness measure.</li>
+  <li><b>Denoising gain:</b> accuracy(PGD → filter) − accuracy(PGD). The PGD attack is not aware of the filter (non-adaptive).</li>
+  <li><b>Transfer recovery rate</b> (illustrative): among scanned validation images that the baseline classifies correctly when clean but misclassifies when perturbed, the fraction that the defended model classifies correctly on <i>the same</i> perturbed image. The attacks are crafted on the <b>baseline</b>, not on the defended model.</li>
+  <li><b>Average Drop %</b> (lower is better): mean of max(0, Y<sub>c</sub> − O<sub>c</sub>)/Y<sub>c</sub>, where O<sub>c</sub> is the class confidence on the CAM-masked image. <b>Increase in Confidence %</b> (higher is better): the share of images where O<sub>c</sub> &gt; Y<sub>c</sub> [9]. <b>Stability</b> (higher is better): Pearson correlation between clean and σ = 0.05 noisy heatmaps. Computed on the baseline model over 40 images (Grad-CAM) and 15 images (Score-CAM, which needs 256 forward passes per image).</li>
+</ul>
+
+<h3>7.3 Comparisons</h3>
+<p>Three models are compared under identical conditions. The <b>Baseline</b> (undefended transfer-learned ResNet-50) is the reference. The <b>Noise-Augmented</b> model is compared with it to isolate the effect of training on random noise. The <b>Adversarially-Trained</b> model shows the effect of robust optimization. Input denoising is compared as a model-agnostic add-on on top of each model. For explainability, Grad-CAM (gradient-based) is compared against Score-CAM (perturbation-based) on the same images and model.</p>
+
+<h3>7.4 Results — white-box robustness (headline)</h3>
+<div class="tcap">Table 1. Top-1 accuracy on 960 validation images. FGSM/PGD are white-box (crafted against each evaluated model).</div>
+<table>
+  <tr><th class="l">Model</th><th>Clean</th><th>Gauss σ=0.05</th><th>Gauss σ=0.10</th><th>Gauss σ=0.20</th><th>FGSM</th><th>PGD</th></tr>
+  <tr><td class="l">Baseline</td><td>0.6812</td><td>0.5906</td><td>0.4708</td><td>0.1979</td><td>0.0229</td><td>0.0000</td></tr>
+  <tr><td class="l">Noise-Augmented</td><td>0.6500</td><td>0.6427</td><td>0.6542</td><td>0.5240</td><td>0.0250</td><td>0.0000</td></tr>
+  <tr><td class="l">Adversarial (final, v3)</td><td>≈0.62<sup>†</sup></td><td>—<sup>‡</sup></td><td>—<sup>‡</sup></td><td>—<sup>‡</sup></td><td>—<sup>‡</sup></td><td>≈0.13<sup>†</sup></td></tr>
+</table>
+<p class="tnote">Baseline and Noise-Augmented rows are copied verbatim from <code>results/robustness_comparison.csv</code>.<br>
+† Approximate values reported by the author for the final v3 adversarially trained model. They are <b>not</b> present in the project's result CSVs or logs and should be replaced by the output of <code>eval_only.py</code>.<br>
+‡ Not re-measured after final training. The Adversarial row currently in <code>robustness_comparison.csv</code> belongs to a superseded checkpoint (see Table 2) and is deliberately not reported here.</p>
+
+<h3>7.5 Adversarial training: from failure to a working recipe</h3>
+<p>Adversarial training did not work on the first attempts. The failures are reported here because they explain the final design.</p>
+<ul>
+  <li><b>Run 1: naive AT (BatchNorm trainable)</b>, in <code>final_project.py</code>. With BN layers updating on a mix of clean and PGD batches, the BN running statistics drifted toward the adversarial distribution. Over 15 epochs, training-set adversarial accuracy crept up to ≈0.10 while clean validation accuracy collapsed from ≈0.39 to ≈0.04 (Figure 2).</li>
+  <li><b>Run 2: BN frozen, only the top block trainable</b> (<code>retrain_adversarial.py</code>, <code>FINE_TUNE_AT = 140</code>, lr 1e-5). Clean accuracy was preserved, but the model gained no PGD robustness and became <i>hyper-brittle to random noise</i>. Lacking the capacity to learn robust features, it only sharpened its decision boundary around clean points. The Adversarial row still stored in <code>robustness_comparison.csv</code> (Table 2) shows exactly this signature, so we attribute it to this superseded checkpoint.</li>
+  <li><b>Run 3 (v3, final):</b> keep BN frozen (protects clean accuracy), unfreeze the whole backbone (capacity), lower dropout, and use an ε-curriculum so the early epochs face attacks the model can still learn from. Checkpoints are selected on robust-validation accuracy at the full ε. This produced the expected <b>clean-vs-robust trade-off</b> [10]: clean accuracy falls from 0.6812 (baseline) to ≈0.62, and white-box PGD accuracy rises from 0.0000 to ≈0.13 (author-reported; see Table 1 note †).</li>
+</ul>
+<div class="tcap">Table 2. Superseded adversarial checkpoint (run 2, stale). Shown only to document the failure mode; not the final model.</div>
+<table>
+  <tr><th class="l">Model</th><th>Clean</th><th>Gauss σ=0.05</th><th>Gauss σ=0.10</th><th>Gauss σ=0.20</th><th>FGSM</th><th>PGD</th></tr>
+  <tr class="stale"><td class="l">Adversarial, run 2 (superseded)</td><td>0.7083</td><td>0.0271</td><td>0.0031</td><td>0.0010</td><td>0.0073</td><td>0.0000</td></tr>
+</table>
+<p class="tnote">Verbatim from the "Adversarial" row of <code>results/robustness_comparison.csv</code>. Clean accuracy is higher than the baseline's, yet accuracy at σ = 0.05 is 0.0271 and PGD accuracy is 0: a brittle model, not a robust one. Re-running <code>eval_only.py</code> with the v3 weights will replace this row.</p>
+
+<figure>
+  <img src="results/adversarial_training_curves.png" alt="Adversarial training loss and accuracy curves">
+  <figcaption><b>Figure 2.</b> Naive adversarial training (run 1, 15 epochs, BN trainable). Training loss falls and clean <i>training</i> accuracy rises, but validation loss increases and validation accuracy collapses from ≈0.39 to ≈0.04, while adversarial training accuracy reaches only ≈0.10. This failure led to the frozen-BN, curriculum-ε design of v3.</figcaption>
+</figure>
+
+<h3>7.6 Results — test-time denoising</h3>
+<div class="tcap">Table 3. PGD (ε = 8/255, white-box w.r.t. the model, non-adaptive w.r.t. the filter) followed by a Gaussian filter (σ = 1.0).</div>
+<table>
+  <tr><th class="l">Model</th><th>PGD</th><th>PGD + denoise</th><th>Recovered (Δ)</th></tr>
+  <tr><td class="l">Baseline</td><td>0.0000</td><td>0.2281</td><td>+0.2281</td></tr>
+  <tr><td class="l">Noise-Augmented</td><td>0.0000</td><td>0.2323</td><td>+0.2323</td></tr>
+  <tr class="stale"><td class="l">Adversarial (run 2, superseded)<sup>‡</sup></td><td>0.0000</td><td>0.0427</td><td>+0.0427</td></tr>
+</table>
+<p class="tnote">Verbatim from <code>results/denoising_defense.csv</code>. ‡ The Adversarial row was produced with the same superseded checkpoint as Table 2; the v3 model was not re-measured after final training.</p>
+
+<h3>7.7 Results — transfer recovery (illustrative only)</h3>
+<div class="box">
+<p><b>Important:</b> these numbers are <b>not</b> white-box robustness. Each perturbation was crafted against the <b>baseline</b> and then shown to the defended model (a transfer setting). Only images the baseline got right when clean but wrong when perturbed are counted, from a scan of up to 60 validation batches. The counts are small. White-box robustness is reported in Table 1.</p>
+</div>
+<div class="tcap">Table 4. Transfer recovery rates (from <code>qualitative_results.py</code>; values from the figure titles of <code>results/qualitative/*.png</code>).</div>
+<table>
+  <tr><th class="l">Perturbation (crafted on baseline)</th><th class="l">Defended model</th><th>Baseline broken</th><th>Defense recovered</th><th>Recovery rate</th></tr>
+  <tr><td class="l">Gaussian noise, σ = 0.10</td><td class="l">Noise-Augmented</td><td>5</td><td>5</td><td>100%</td></tr>
+  <tr><td class="l">FGSM, ε = 8/255</td><td class="l">Adversarially-Trained</td><td>24</td><td>23</td><td>96%</td></tr>
+  <tr><td class="l">PGD, ε = 8/255, 7 steps</td><td class="l">Adversarially-Trained</td><td>28</td><td>27</td><td>96%</td></tr>
+</table>
+<p class="tnote">High transfer recovery is expected even without real robustness: a perturbation tuned to the baseline's gradients often fails to fool a different set of weights. These figures illustrate how attention recovers; they do not measure robustness.</p>
+
+<h3>7.8 Results — explainability</h3>
+<div class="tcap">Table 5. Explanation faithfulness and stability (baseline model).</div>
+<table>
+  <tr><th class="l">Method</th><th>Average Drop % ↓</th><th>Increase in Confidence % ↑</th><th>Stability corr. ↑</th><th>n images</th></tr>
+  <tr><td class="l">Grad-CAM</td><td>29.039</td><td>25.000</td><td>0.826</td><td>40</td></tr>
+  <tr><td class="l">Score-CAM</td><td>9.042</td><td>33.333</td><td>0.979</td><td>15</td></tr>
+</table>
+<p class="tnote">Verbatim from <code>results/explanation_metrics.csv</code> (rounded as in <code>RESULTS_SUMMARY.md</code>).</p>
+
+<figure>
+  <img src="results/explainability_gallery.png" alt="Grad-CAM and Score-CAM gallery under clean, Gaussian, FGSM and PGD inputs">
+  <figcaption><b>Figure 3.</b> Explainability gallery (baseline model). Columns: clean image, Grad-CAM and Score-CAM on the clean image, then each perturbation (Gaussian, FGSM, PGD) with its Grad-CAM. Score-CAM gives a more complete, object-covering map on clean inputs. Under Gaussian noise Grad-CAM stays on the object; under FGSM it shifts; under PGD the heatmap largely vanishes, because the attack has destroyed the evidence for the true class.</figcaption>
+</figure>
+
+<h3>7.9 Answers to the research questions</h3>
+<p><b>RQ1 (noise vs. attacks).</b> Gaussian noise degrades the baseline gradually: 0.6812 clean → 0.5906 / 0.4708 / 0.1979 at σ = 0.05 / 0.10 / 0.20. Adversarial perturbations are far more damaging per unit of perturbation. FGSM at ε = 8/255 ≈ 0.031 (per-pixel change at most 0.031, smaller than the typical change at σ = 0.05) drops accuracy to 0.0229, and 7-step PGD drives it to 0.0000. Random noise has to be large to hurt; adversarial noise only has to be well aimed.</p>
+<p><b>RQ2 (defenses).</b> <i>Noise-augmented training</i> is very effective against its own threat: accuracy at σ = 0.10 rises from 0.4708 to 0.6542 and at σ = 0.20 from 0.1979 to 0.5240, at a clean cost of 3.1 points (0.6812 → 0.6500). It gives essentially no white-box adversarial robustness (FGSM 0.0250, PGD 0.0000). <i>Adversarial training</i> only worked with the v3 recipe and shows the expected trade-off: lower clean accuracy (≈0.62) for non-zero white-box PGD accuracy (≈0.13, author-reported; its Gaussian and FGSM accuracies were not re-measured). <i>Test-time Gaussian denoising</i> recovers about 23 points of PGD accuracy on the baseline and the noise-augmented model (0.0000 → 0.2281 / 0.2323). This is a non-adaptive evaluation: an attacker who differentiates through the filter would likely reduce this gain, so it is an upper bound.</p>
+<p><b>RQ3 (Grad-CAM vs. Score-CAM).</b> They differ clearly, and Score-CAM is better on all three measures. It is more faithful (Average Drop 9.04% vs. 29.04%; Increase in Confidence 33.3% vs. 25.0%) and more stable under mild noise (correlation 0.979 vs. 0.826). Grad-CAM's reliance on local gradients, the same signal adversarial attacks exploit, makes it noisier. Score-CAM costs roughly 256 forward passes per image, which is why it was scored on fewer images (15 vs. 40). With that small sample the difference should be read as indicative rather than conclusive.</p>
+
+<h3>7.10 Qualitative transfer-recovery figures</h3>
+<p>Figures 4–6 show, for three samples each, the clean and perturbed image under the baseline and under the defended model, with a Grad-CAM row beneath each. As stated in Section 7.7, they are <b>transfer, illustrative</b> results, not white-box robustness. They were generated with the adversarial checkpoint that was in <code>models/</code> when <code>qualitative_results.py</code> was run.</p>
+
+<figure class="pb">
+  <img class="tall" src="results/qualitative/gaussian_recovery.png" alt="Gaussian noise recovery by the noise-augmented model">
+  <figcaption><b>Figure 4 (transfer, illustrative).</b> Gaussian noise (σ = 0.10) → Noise-Augmented defense. The baseline misreads noisy goldfish as "sea cucumber" and its Grad-CAM drifts to background texture. The noise-augmented model keeps the correct label and re-centres its attention on the fish (5/5 broken images recovered).</figcaption>
+</figure>
+<figure class="pb">
+  <img class="tall" src="results/qualitative/fgsm_recovery.png" alt="FGSM recovery by the adversarially trained model">
+  <figcaption><b>Figure 5 (transfer, illustrative).</b> FGSM (ε = 8/255) crafted on the baseline → Adversarially-Trained model. The baseline's attention shifts off the object (e.g., "syringe", "hog"); the defended model's Grad-CAM stays on the fish (23/24 recovered). Perturbations were not crafted against the defended model.</figcaption>
+</figure>
+<figure class="pb">
+  <img class="tall" src="results/qualitative/pgd_recovery.png" alt="PGD recovery by the adversarially trained model">
+  <figcaption><b>Figure 6 (transfer, illustrative).</b> PGD (ε = 8/255, 7 steps) crafted on the baseline → Adversarially-Trained model. The baseline is fooled with up to 100% confidence and its true-class heatmap nearly disappears; the defended model classifies the same images correctly (27/28 recovered). Under a white-box PGD attack on the v3 model itself, accuracy is only ≈0.13 (Table 1).</figcaption>
+</figure>
+
+<h2 class="pb">8. References</h2>
+<ol class="refs">
+  <li>Y. Le and X. Yang, "Tiny ImageNet Visual Recognition Challenge," CS231n Course Report, Stanford University, 2015.</li>
+  <li>J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, "ImageNet: A large-scale hierarchical image database," in <i>Proc. IEEE CVPR</i>, 2009, pp. 248–255.</li>
+  <li>K. He, X. Zhang, S. Ren, and J. Sun, "Deep residual learning for image recognition," in <i>Proc. IEEE CVPR</i>, 2016, pp. 770–778.</li>
+  <li>I. J. Goodfellow, J. Shlens, and C. Szegedy, "Explaining and harnessing adversarial examples," in <i>Proc. ICLR</i>, 2015.</li>
+  <li>A. Madry, A. Makelov, L. Schmidt, D. Tsipras, and A. Vladu, "Towards deep learning models resistant to adversarial attacks," in <i>Proc. ICLR</i>, 2018.</li>
+  <li>D. Hendrycks and T. Dietterich, "Benchmarking neural network robustness to common corruptions and perturbations," in <i>Proc. ICLR</i>, 2019.</li>
+  <li>R. R. Selvaraju, M. Cogswell, A. Das, R. Vedantam, D. Parikh, and D. Batra, "Grad-CAM: Visual explanations from deep networks via gradient-based localization," in <i>Proc. IEEE ICCV</i>, 2017, pp. 618–626.</li>
+  <li>H. Wang, Z. Wang, M. Du, F. Yang, Z. Zhang, S. Ding, P. Mardziel, and X. Hu, "Score-CAM: Score-weighted visual explanations for convolutional neural networks," in <i>Proc. IEEE/CVF CVPR Workshops</i>, 2020, pp. 24–25.</li>
+  <li>A. Chattopadhay, A. Sarkar, P. Howlader, and V. N. Balasubramanian, "Grad-CAM++: Generalized gradient-based visual explanations for deep convolutional networks," in <i>Proc. IEEE WACV</i>, 2018, pp. 839–847.</li>
+  <li>D. Tsipras, S. Santurkar, L. Engstrom, A. Turner, and A. Madry, "Robustness may be at odds with accuracy," in <i>Proc. ICLR</i>, 2019.</li>
+  <li>M. Abadi <i>et al.</i>, "TensorFlow: A system for large-scale machine learning," in <i>Proc. 12th USENIX OSDI</i>, 2016, pp. 265–283.</li>
+  <li>F. Chollet <i>et al.</i>, "Keras," 2015. [Online]. Available: https://keras.io</li>
+  <li>P. Virtanen <i>et al.</i>, "SciPy 1.0: Fundamental algorithms for scientific computing in Python," <i>Nature Methods</i>, vol. 17, pp. 261–272, 2020.</li>
+</ol>
+
+</body>
+</html>

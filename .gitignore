@@ -1,0 +1,12 @@
+# Dataset (download via final_project.py from cs231n.stanford.edu)
+tiny-imagenet-200/
+tiny-imagenet-200.zip
+
+# Model checkpoints (too large for GitHub; regenerate with the training scripts)
+models/
+*.h5
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
