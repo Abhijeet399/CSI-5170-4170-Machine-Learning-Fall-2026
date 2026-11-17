@@ -1,0 +1,10 @@
+# CSI 5170/4170 Final Project — Adversarial Robustness of CNNs
+# Python 3.10. Pin TensorFlow < 2.16 so tf.keras ImageDataGenerator remains available.
+tensorflow>=2.13,<2.16
+numpy>=1.23,<2.0
+scipy>=1.10
+pandas>=2.0
+matplotlib>=3.7
+tqdm>=4.65
+Pillow>=9.5
+# Optional (install if re-reading notebooks): jupyter, nbformat

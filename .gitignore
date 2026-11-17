@@ -14,3 +14,10 @@ __pycache__/
 # brag video: tool cache and unlicensed raw music source
 brag-output/composition/.hyperframes/
 brag-output/composition/assets/music/
+
+# Phase 3 additions: large / regenerable artifacts
+*.weights.h5
+venv/
+*.zip
+cv_full.log
+nohup.out
